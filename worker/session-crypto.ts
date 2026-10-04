@@ -53,7 +53,9 @@ export const decryptSession = async (
   now = Date.now()
 ): Promise<WebSession | null> => {
   try {
+    if (!/^[A-Za-z0-9_-]+$/.test(encrypted)) return null;
     const payload = fromBase64Url(encrypted);
+    if (toBase64Url(payload) !== encrypted) return null;
     if (payload.byteLength <= 12) return null;
     const iv = payload.slice(0, 12);
     const ciphertext = payload.slice(12);

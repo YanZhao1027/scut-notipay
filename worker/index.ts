@@ -1,5 +1,6 @@
 import { getCaptcha, LoginError, login, refresh, UpstreamError } from './auth.js';
 import { fetchBillsForSession, ReauthRequiredError } from './billing.js';
+import { getScutEgressDiagnostics } from './diagnostics.js';
 import {
   apiError,
   clearSessionCookie,
@@ -180,6 +181,14 @@ const api = async (request: Request, env: Env): Promise<Response> => {
       return apiError('INVALID_REQUEST', 404);
     }
     return egressProbe();
+  }
+
+  if (pathname === '/api/debug/scut-egress' && request.method === 'GET') {
+    const debugSecret = env.DEBUG_SECRET;
+    if (!debugSecret || request.headers.get('X-Debug-Secret') !== debugSecret) {
+      return apiError('INVALID_REQUEST', 404);
+    }
+    return jsonResponse(await getScutEgressDiagnostics());
   }
 
   if (!isSameOrigin(request)) return apiError('INVALID_REQUEST', 403);

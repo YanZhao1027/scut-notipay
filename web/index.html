@@ -42,6 +42,7 @@
               id="username"
               name="username"
               type="text"
+              disabled
               inputmode="text"
               autocomplete="username"
               autocapitalize="none"
@@ -58,6 +59,7 @@
               id="password"
               name="password"
               type="password"
+              disabled
               autocomplete="current-password"
               maxlength="128"
               placeholder="输入校园卡查询密码"
@@ -84,13 +86,14 @@
             </div>
           </div>
 
-          <button id="login-button" class="primary-button" type="submit">
+          <button id="login-button" class="primary-button" type="submit" disabled>
             <span>登录并查询</span><span aria-hidden="true">↗</span>
           </button>
           <p class="privacy-note">
             密码仅用于本次登录，不会保存。登录后仅以加密的短期会话 Cookie 维持查询。
           </p>
           <p id="login-status" class="status" role="status" aria-live="polite"></p>
+          <button id="connection-retry" class="text-button" type="button" hidden>重试连接</button>
         </form>
       </section>
 

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   classifyLoginError,
+  getCaptcha,
   parseCaptchaResponse,
   parseTokenResponse,
-  tokenIsExpired
+  tokenIsExpired,
+  UpstreamError
 } from './auth.js';
 import { fetchBillsForSession, parseGzicBills, ReauthRequiredError } from './billing.js';
 import { cookieValue, upstreamCookie } from './http.js';
@@ -35,6 +37,34 @@ test('captcha response parser accepts the SCUT key and image fields', () => {
   assert.equal(parseCaptchaResponse({ key: 1, image: 'data:' }), null);
 });
 
+test('captcha preflight verifies the keyboard endpoint before allowing login', async () => {
+  const requests: string[] = [];
+  const captcha = await getCaptcha(async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.includes('/oauth/captcha')) {
+      return Response.json({ key: 'key', image: 'data:image/png;base64,abc' });
+    }
+    return Response.json({ data: { numberKeyboard: '0123456789', uuid: 'uuid' } });
+  });
+  assert.equal(captcha.key, 'key');
+  assert.equal(requests.length, 2);
+  assert.ok(requests[0].includes('/oauth/captcha'));
+  assert.ok(requests[1].includes('/keyboard'));
+});
+
+test('captcha preflight rejects when keyboard access is unavailable', async () => {
+  await assert.rejects(
+    getCaptcha(async (input) => {
+      if (String(input).includes('/oauth/captcha')) {
+        return Response.json({ key: 'key', image: 'data:image/png;base64,abc' });
+      }
+      return new Response(null, { status: 403 });
+    }),
+    UpstreamError
+  );
+});
+
 test('login error parser distinguishes captcha required and invalid', () => {
   const required = classifyLoginError(
     { error_description: 'captcha required' },
@@ -48,6 +78,26 @@ test('login error parser distinguishes captcha required and invalid', () => {
   );
   assert.equal(required, 'CAPTCHA_REQUIRED');
   assert.equal(invalid, 'CAPTCHA_INVALID');
+});
+
+test('numeric Synjones captcha codes are classified as CAPTCHA_REQUIRED', () => {
+  for (const code of [8002, 8003, '8002', '8003']) {
+    assert.equal(
+      classifyLoginError({ code }, new Response(null, { status: 400 }), false),
+      'CAPTCHA_REQUIRED'
+    );
+  }
+});
+
+test('numeric captcha code with an explicit incorrect response is CAPTCHA_INVALID after submission', () => {
+  assert.equal(
+    classifyLoginError(
+      { code: 8002, message: 'captcha code incorrect' },
+      new Response(null, { status: 400 }),
+      true
+    ),
+    'CAPTCHA_INVALID'
+  );
 });
 
 test('token response parser keeps expiry, refresh token and TGC cookies', async () => {
@@ -184,7 +234,9 @@ test('session cookie encryption round-trips and rejects tampering', async () => 
   const session = makeSession();
   const encrypted = await encryptSession(session, secret);
   assert.deepEqual(await decryptSession(encrypted, secret, 2000), session);
-  assert.equal(await decryptSession(`${encrypted.slice(0, -1)}x`, secret, 2000), null);
+  const tampered = `${encrypted[0] === 'A' ? 'B' : 'A'}${encrypted.slice(1)}`;
+  assert.equal(await decryptSession(tampered, secret, 2000), null);
+  assert.equal(await decryptSession(`${encrypted}x`, secret, 2000), null);
   assert.equal(await decryptSession(encrypted, '1'.repeat(64), 2000), null);
 });
 

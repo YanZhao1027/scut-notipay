@@ -32,6 +32,7 @@ export interface Bills {
 export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   SESSION_SECRET: string;
+  DEBUG_SECRET?: string;
 }
 
 export type ApiErrorCode =

@@ -3,6 +3,8 @@ import type { Campus, TokenState, UserProfile } from './types.js';
 
 export const CARD_BASE = 'https://ecardwxnew.scut.edu.cn';
 const TOKEN_URL = `${CARD_BASE}/berserker-auth/oauth/token`;
+const CAPTCHA_URL = `${CARD_BASE}/berserker-auth/oauth/captcha?synAccessSource=h5`;
+const KEYBOARD_URL = `${CARD_BASE}/berserker-secure/keyboard?type=Standard&order=0&synAccessSource=h5`;
 const BASIC_AUTH = 'Basic bW9iaWxlX3NlcnZpY2VfcGxhdGZvcm06bW9iaWxlX3NlcnZpY2VfcGxhdGZvcm1fc2VjcmV0';
 
 export interface CaptchaChallenge {
@@ -48,18 +50,17 @@ export const parseCaptchaResponse = (value: unknown): CaptchaChallenge | null =>
 };
 
 export const getCaptcha = async (fetcher: typeof fetch = fetch): Promise<CaptchaChallenge> => {
-  const response = await fetcher(`${CARD_BASE}/berserker-auth/oauth/captcha?synAccessSource=h5`, {
-    signal: AbortSignal.timeout(12000)
-  });
+  const response = await fetcher(CAPTCHA_URL, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new UpstreamError(response.status);
   const challenge = parseCaptchaResponse(await response.json());
   if (!challenge) throw new UpstreamError(response.status);
+  // Check the password-encoding dependency before the user enters a password.
+  await getKeyboard(fetcher);
   return challenge;
 };
 
-const encodePassword = async (password: string, fetcher: typeof fetch): Promise<string> => {
-  const url = `${CARD_BASE}/berserker-secure/keyboard?type=Standard&order=0&synAccessSource=h5`;
-  const response = await fetcher(url, { signal: AbortSignal.timeout(12000) });
+const getKeyboard = async (fetcher: typeof fetch) => {
+  const response = await fetcher(KEYBOARD_URL, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new UpstreamError(response.status);
   const payload = (await response.json()) as {
     data?: { numberKeyboard?: string; uuid?: string };
@@ -69,6 +70,11 @@ const encodePassword = async (password: string, fetcher: typeof fetch): Promise<
   if (typeof keyboard !== 'string' || typeof uuid !== 'string') {
     throw new UpstreamError(response.status);
   }
+  return { keyboard, uuid };
+};
+
+const encodePassword = async (password: string, fetcher: typeof fetch): Promise<string> => {
+  const { keyboard, uuid } = await getKeyboard(fetcher);
   if (!/^\d+$/.test(password)) throw new LoginError('INVALID_CREDENTIALS');
   return (
     Array.from(password)
@@ -94,10 +100,14 @@ export const classifyLoginError = (
   hadCaptcha: boolean
 ): LoginFailure => {
   const text = errorText(payload);
+  const code = String(payload.code ?? '');
+  const clearlyInvalid = /invalid|incorrect|wrong|错误|不正确/.test(text);
+  if (code === '8002' || code === '8003') {
+    return hadCaptcha && clearlyInvalid ? 'CAPTCHA_INVALID' : 'CAPTCHA_REQUIRED';
+  }
   const captchaSignal = /captcha|验证码|校验码/.test(text);
   if (captchaSignal) {
-    const incorrect = /invalid|incorrect|wrong|错误|不正确/.test(text);
-    return hadCaptcha && incorrect ? 'CAPTCHA_INVALID' : 'CAPTCHA_REQUIRED';
+    return hadCaptcha && clearlyInvalid ? 'CAPTCHA_INVALID' : 'CAPTCHA_REQUIRED';
   }
   if (response.status === 401 || response.status === 400) return 'INVALID_CREDENTIALS';
   return 'INVALID_CREDENTIALS';

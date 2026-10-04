@@ -10,6 +10,7 @@ const captchaCode = document.querySelector('#captcha-code');
 
 const state = {
   captchaKey: '',
+  loginAvailable: false,
   hasSession: false,
   lastFetchAt: 0,
   interval: 0,
@@ -40,16 +41,50 @@ const apiJson = async (url, options = {}) => {
 };
 
 const loadCaptcha = async () => {
-  setStatus(loginStatus, '正在获取验证码…');
   const { response, data } = await apiJson('/api/auth/captcha');
   if (!response.ok || typeof data.key !== 'string' || typeof data.image !== 'string') {
-    throw new Error('验证码暂时无法获取，请稍后再试。');
+    const error = new Error(
+      data.code === 'UPSTREAM_UNAVAILABLE'
+        ? 'UPSTREAM_UNAVAILABLE'
+        : '验证码暂时无法获取，请稍后再试。'
+    );
+    throw error;
   }
   state.captchaKey = data.key;
   captchaImage.src = data.image;
   captchaCode.value = '';
   captchaPanel.hidden = false;
-  captchaCode.focus({ preventScroll: true });
+};
+
+const setLoginAvailability = (available) => {
+  state.loginAvailable = available;
+  loginButton.disabled = !available;
+  document.querySelector('#username').disabled = !available;
+  document.querySelector('#password').disabled = !available;
+  document.querySelector('#captcha-refresh').disabled = !available;
+  document.querySelector('#connection-retry').hidden = available;
+  if (!available) {
+    document.querySelector('#password').value = '';
+    captchaPanel.hidden = true;
+    captchaImage.removeAttribute('src');
+    captchaCode.value = '';
+    state.captchaKey = '';
+    setStatus(loginStatus, '当前服务器无法连接华工一卡通，请勿继续输入密码。', 'error');
+  }
+};
+
+const checkLoginConnection = async () => {
+  setLoginAvailability(false);
+  document.querySelector('#connection-retry').hidden = true;
+  setStatus(loginStatus, '正在检查一卡通连接…');
+  try {
+    await loadCaptcha();
+    setLoginAvailability(true);
+    setStatus(loginStatus, '一卡通连接正常，可以登录。');
+  } catch {
+    setLoginAvailability(false);
+    document.querySelector('#connection-retry').hidden = false;
+  }
 };
 
 const formatBalance = (value) => {
@@ -87,7 +122,8 @@ const showLogin = (message = '') => {
 };
 
 const handleReauth = () => {
-  void showLogin('登录状态已失效，请重新认证。');
+  showLogin('登录状态已失效，请重新认证。');
+  void checkLoginConnection();
 };
 
 const applyBills = (bills) => {
@@ -174,7 +210,7 @@ const startAutoRefresh = (interval) => {
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (loginButton.disabled) return;
+  if (loginButton.disabled || !state.loginAvailable) return;
   const body = {
     username: document.querySelector('#username').value.trim(),
     password: document.querySelector('#password').value,
@@ -198,23 +234,37 @@ loginForm.addEventListener('submit', async (event) => {
     if (data.code === 'CAPTCHA_REQUIRED') {
       try {
         await loadCaptcha();
+        captchaCode.focus({ preventScroll: true });
         setStatus(loginStatus, '请输入一卡通验证码后继续。');
       } catch (error) {
-        setStatus(loginStatus, error.message || '验证码暂时无法获取。', 'error');
+        if (error.message === 'UPSTREAM_UNAVAILABLE') {
+          setLoginAvailability(false);
+        } else {
+          setStatus(loginStatus, error.message || '验证码暂时无法获取。', 'error');
+        }
       }
       return;
     }
     if (data.code === 'CAPTCHA_INVALID') {
       try {
         await loadCaptcha();
+        captchaCode.focus({ preventScroll: true });
         setStatus(loginStatus, '验证码不正确，请重新输入。', 'error');
       } catch (error) {
-        setStatus(loginStatus, error.message || '验证码暂时无法获取。', 'error');
+        if (error.message === 'UPSTREAM_UNAVAILABLE') {
+          setLoginAvailability(false);
+        } else {
+          setStatus(loginStatus, error.message || '验证码暂时无法获取。', 'error');
+        }
       }
       return;
     }
     if (!response.ok || !data.ok) {
       document.querySelector('#password').value = '';
+      if (data.code === 'UPSTREAM_UNAVAILABLE') {
+        setLoginAvailability(false);
+        return;
+      }
       const message =
         data.code === 'INVALID_CREDENTIALS'
           ? '账号或密码不正确。'
@@ -236,9 +286,9 @@ loginForm.addEventListener('submit', async (event) => {
     await fetchBills();
   } catch {
     body.password = '';
-    setStatus(loginStatus, '网络暂时不可用，请检查连接后重试。', 'error');
+    setLoginAvailability(false);
   } finally {
-    loginButton.disabled = false;
+    loginButton.disabled = !state.loginAvailable;
   }
 });
 
@@ -247,8 +297,17 @@ document.querySelector('#captcha-refresh').addEventListener('click', async () =>
     await loadCaptcha();
     setStatus(loginStatus, '验证码已更新。');
   } catch (error) {
-    setStatus(loginStatus, error.message || '验证码暂时无法获取。', 'error');
+    if (error.message === 'UPSTREAM_UNAVAILABLE') {
+      setLoginAvailability(false);
+      document.querySelector('#connection-retry').hidden = false;
+    } else {
+      setStatus(loginStatus, error.message || '验证码暂时无法获取。', 'error');
+    }
   }
+});
+
+document.querySelector('#connection-retry').addEventListener('click', () => {
+  void checkLoginConnection();
 });
 
 document.querySelector('#query-button').addEventListener('click', () => {
@@ -268,6 +327,7 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
   }
   document.querySelector('#password').value = '';
   showLogin('已退出登录。');
+  void checkLoginConnection();
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -295,15 +355,19 @@ window.addEventListener('online', () => {
 const restoreSession = async () => {
   try {
     const { response, data } = await apiJson('/api/auth/session');
-    if (!response.ok || !data.ok) return;
+    if (!response.ok || !data.ok) return false;
     state.hasSession = true;
     document.querySelector('#user-name').textContent = data.user?.name || data.user?.sno || '';
     loginPanel.hidden = true;
     resultsPanel.hidden = false;
     await fetchBills();
+    return true;
   } catch {
     /* show sign-in form when the session cannot be checked */
+    return false;
   }
 };
 
-void restoreSession();
+void restoreSession().then((restored) => {
+  if (!restored) void checkLoginConnection();
+});
