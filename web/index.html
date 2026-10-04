@@ -3,13 +3,159 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#f5f7fa" />
+    <meta name="theme-color" content="#f4f7fb" />
+    <meta name="description" content="实时查询华南理工大学宿舍电费、水费与空调费余额。" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
     <title>SCUT 宿舍余额查询</title>
   </head>
   <body>
-    <main>
-      <h1>SCUT 宿舍余额查询</h1>
-      <p>服务正在启动。</p>
+    <main class="shell">
+      <header class="brand-row">
+        <a class="brand" href="/" aria-label="SCUT 宿舍余额查询首页">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <span>SCUT <span class="brand-light">LIVING</span></span>
+        </a>
+        <span class="live-pill"><i></i> 实时查询</span>
+      </header>
+
+      <section id="login-panel" class="panel login-panel">
+        <div class="intro">
+          <span class="eyebrow">CAMPUS UTILITIES</span>
+          <h1>宿舍余额查询</h1>
+          <p>登录校园一卡通，查看宿舍电费与水费余额。</p>
+        </div>
+
+        <form id="login-form" class="form" novalidate>
+          <label class="field">
+            <span>所在校区</span>
+            <select id="campus" name="campus" autocomplete="off" required>
+              <option value="GZIC">GZIC · 广州国际校区</option>
+              <option value="DXC">DXC · 大学城校区</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>一卡通账号 / 学号</span>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              inputmode="text"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="100"
+              placeholder="输入校园卡账号或学号"
+              required
+            />
+          </label>
+
+          <label class="field">
+            <span>一卡通密码</span>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              maxlength="128"
+              placeholder="输入校园卡查询密码"
+              required
+            />
+          </label>
+
+          <div id="captcha-panel" class="captcha-panel" hidden>
+            <div class="captcha-heading">
+              <span class="field-title">图形验证码</span>
+              <button id="captcha-refresh" class="text-button" type="button">换一张</button>
+            </div>
+            <div class="captcha-row">
+              <img id="captcha-image" alt="一卡通图形验证码" />
+              <input
+                id="captcha-code"
+                type="text"
+                inputmode="text"
+                autocomplete="off"
+                autocapitalize="characters"
+                maxlength="32"
+                placeholder="输入验证码"
+              />
+            </div>
+          </div>
+
+          <button id="login-button" class="primary-button" type="submit">
+            <span>登录并查询</span><span aria-hidden="true">↗</span>
+          </button>
+          <p class="privacy-note">
+            密码仅用于本次登录，不会保存。登录后仅以加密的短期会话 Cookie 维持查询。
+          </p>
+          <p id="login-status" class="status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section id="results-panel" class="panel results-panel" hidden>
+        <div class="results-head">
+          <div>
+            <span class="eyebrow">YOUR ROOM</span>
+            <h1 id="room-name">宿舍</h1>
+            <p id="user-name" class="subtle"></p>
+          </div>
+          <button id="logout-button" class="quiet-button" type="button">退出</button>
+        </div>
+
+        <div class="balance-grid" aria-live="polite">
+          <article class="balance-card electric-card">
+            <div class="balance-label">
+              <span class="balance-icon">ϟ</span><span>电费余额</span>
+            </div>
+            <p id="electric-value" class="balance-value">—</p>
+            <span class="balance-unit">平台返回余额 · 元</span>
+          </article>
+          <article class="balance-card water-card">
+            <div class="balance-label">
+              <span class="balance-icon">≈</span><span>水费余额</span>
+            </div>
+            <p id="water-value" class="balance-value">—</p>
+            <span class="balance-unit">平台返回余额 · 元</span>
+          </article>
+          <article class="balance-card ac-card">
+            <div class="balance-label">
+              <span class="balance-icon">✳</span><span>空调费余额</span>
+            </div>
+            <p id="ac-value" class="balance-value">—</p>
+            <span id="ac-unit" class="balance-unit">平台返回余额 · 元</span>
+          </article>
+        </div>
+
+        <div class="updated-row">
+          <span class="updated-dot"></span>
+          <span>最后更新 <strong id="updated-at">等待查询</strong></span>
+          <span id="query-state" class="query-state"></span>
+        </div>
+
+        <button id="query-button" class="primary-button query-button" type="button">
+          <span>立即刷新</span><span aria-hidden="true">↻</span>
+        </button>
+
+        <fieldset class="refresh-options">
+          <legend>自动刷新</legend>
+          <div class="refresh-choices">
+            <label><input type="radio" name="refresh" value="0" checked /><span>关闭</span></label>
+            <label><input type="radio" name="refresh" value="300000" /><span>5 分钟</span></label>
+            <label><input type="radio" name="refresh" value="600000" /><span>10 分钟</span></label>
+            <label><input type="radio" name="refresh" value="1800000" /><span>30 分钟</span></label>
+          </div>
+        </fieldset>
+        <p class="foreground-note">自动刷新仅在网页打开且处于前台时工作。</p>
+        <p id="results-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <footer class="footer">
+        <span>华南理工大学 · 校园生活服务</span>
+        <span>余额由一卡通平台实时返回</span>
+      </footer>
     </main>
+    <script src="/app.js" defer></script>
   </body>
 </html>

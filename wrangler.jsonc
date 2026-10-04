@@ -2,7 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "scut-notipay-web",
   "main": "worker/index.ts",
-  "compatibility_date": "2026-10-04",
+  "compatibility_date": "2026-06-23",
+  "workers_dev": true,
   "assets": {
     "directory": "./web",
     "binding": "ASSETS",

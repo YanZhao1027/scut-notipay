@@ -13,10 +13,13 @@ node_modules/
 
 # build
 dist/
+.wrangler/
 
 # env
 .env
 .env.production
+.dev.vars
+.dev.vars.*
 config.json
 
 # database
