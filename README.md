@@ -117,6 +117,8 @@ SCUT_INTEGRATION_TEST=1 pnpm run test:web
 
 ### 已知限制
 
+- **Cloudflare 出口实测（2026-10-04）：** Worker 请求 `ecardwxnew.scut.edu.cn/` 得到 HTTP 403（约 0.8 秒）；已部署的 `GET /api/auth/captcha` 返回 HTTP 502 `UPSTREAM_UNAVAILABLE`。因此当前 GZIC 在线登录和查询未能跑通。403 可能与 Cloudflare 出口来源或学校访问策略有关，但具体拒绝原因尚未确认。临时网络探测 Worker 已在测试后删除。
+- Worker 请求 `dfyc.utc.scut.edu.cn/` 得到 HTTP 200（约 4.0 秒），随后两次 302 跳转到 `frontend_static/frontend/login/cas_login.html`。这只验证了 Cloudflare 到 DXC 登录入口的网络可达性；尚未验证有效账号登录、完整 SSO/JSESSIONID、水电查询或刷新后的会话重建。
 - 已在 SCUT 官方 `plat-pc` JavaScript 中确认验证码读取接口，但该页面没有暴露一卡通账号登录表单。登录验证码字段仍需要真实账号的一次受控成功/失败验证；当前实现采用 `captcha_header_code` 与 `captcha_header_key` 候选字段。一次使用虚构账号、错误验证码的低频探测返回 HTTP 400 和通用凭据错误，不能证明字段已被学校端识别。
 - `refresh_token` 的有效性、轮换行为与刷新后的 GZIC/DXC 查询尚未通过有效学生会话验证。刷新失败会返回 `REAUTH_REQUIRED`，不会触发密码重试。
 - DXC SSO 重定向按 Bot 现有流程移植，需用有效大学城账号验证 302 链、JSESSIONID 和刷新后重建会话。若学校侧或 Cloudflare 出口拒绝请求，不会尝试绕过。
